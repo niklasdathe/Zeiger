@@ -1,0 +1,4 @@
+# Secrets
+secrets.h
+*.pem
+*.key
