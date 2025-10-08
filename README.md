@@ -7,9 +7,11 @@
     The ICS-Link can be found by going to your google calendar dashboard -> Settings -> Your calendars name under settings for my calendar -> Secret adress in iCal format.  
     Copy this link and paste it into the placeholder in secrets.h
 
-- Edit the AppConfig.h to change the dashboard to your liking:
-    *DarkMode*: switch between black or white background color
+- Edit the AppConfig.h to change the dashboard to your liking:  
+    *DarkMode*: switch between black or white background color  
     *locale*: switch the language of your dashboard (soon: DE, EN, FR)
+    *use24h*: Use the 24h time format
+      
 
 
   
