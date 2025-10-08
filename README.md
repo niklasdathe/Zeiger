@@ -9,7 +9,7 @@
 
 - Edit the AppConfig.h to change the dashboard to your liking:  
     *DarkMode*: switch between black or white background color  
-    *locale*: switch the language of your dashboard (soon: DE, EN, FR)
+    *locale*: switch the language of your dashboard (soon: DE, EN, FR)  
     *use24h*: Use the 24h time format
       
 
