@@ -1,4 +1,5 @@
-##Components
+# Zeiger
+## Components
 - E-Ink Display https://www.waveshare.com/product/displays/e-paper/epaper-1/7.5inch-e-paper.htm
 - ESP32 E-Ink Display Driver https://www.waveshare.com/product/arduino/displays/e-paper/e-paper-esp32-driver-board.htm
 
