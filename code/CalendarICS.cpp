@@ -52,10 +52,10 @@ static String icsUnescape(const String& s) {
 // offset = now_local_epoch - now_utc_epoch
 static long currentLocalOffsetSeconds() {
   time_t now; time(&now);
-  struct tm g; gmtime_r(&now, &g);
-  // mktime() interprets 'g' as if it's local time → gives local_epoch_of_gmt_struct
-  time_t local_from_g = mktime(&g);
-  return (long)(now - local_from_g);
+  struct tm localTm; localtime_r(&now, &localTm);
+  // Treat the local time struct as if it were UTC to recover the offset
+  time_t local_as_utc = timegm_compat(&localTm);
+  return (long)(local_as_utc - now);
 }
 
 // Format "HH:MM" for a UTC epoch using our measured local offset (tz-agnostic)
