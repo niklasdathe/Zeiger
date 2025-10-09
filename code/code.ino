@@ -64,7 +64,7 @@ static const char* CAL_URL = SECRET_CAL_URL;
 #define HDR_W W
 #define HDR_H 46
 
-// Left column (Air Quality)
+// Left column (Weather)
 #define GUTTER 8
 #define COL_L_X GUTTER
 #define COL_L_Y (HDR_Y + HDR_H + 4)
@@ -89,10 +89,10 @@ static const char* CAL_URL = SECRET_CAL_URL;
 #define PRT_CLK_W 260
 #define PRT_CLK_H (HDR_H - 12)
 
-#define PRT_AIR_X (COL_L_X + 6)
-#define PRT_AIR_Y (COL_L_Y + 26)
-#define PRT_AIR_W (COL_L_W - 12)
-#define PRT_AIR_H (COL_L_H - 36)
+#define PRT_WTH_X (COL_L_X + 6)
+#define PRT_WTH_Y (COL_L_Y + 26)
+#define PRT_WTH_W (COL_L_W - 12)
+#define PRT_WTH_H (COL_L_H - 36)
 
 #define PRT_CAL_X (COL_R_X + 6)
 #define PRT_CAL_Y (COL_R_Y + 26)
@@ -105,15 +105,26 @@ static const char* CAL_URL = SECRET_CAL_URL;
 #define PRT_PLT_H (BOT_H - 36)
 
 // ---------- Data types ----------
+typedef enum {
+  WeatherIcon_Sun = 0,
+  WeatherIcon_Partly,
+  WeatherIcon_Rain,
+  WeatherIcon_Storm,
+} WeatherIcon;
+
 typedef struct {
-  int pm25;   // µg/m³
-  int pm10;   // µg/m³
-  int co2;    // ppm
-  float voc;  // mg/m³ (placeholder)
-  int nox;    // ppb (placeholder)
-  float tC;   // °C
-  int rh;     // %
-} AirData;
+  WeatherIcon icon;
+  char condition[24];
+  int tempNow;       // °C
+  int feelsLike;     // °C
+  int tempHigh;      // °C
+  int tempLow;       // °C
+  int humidity;      // %
+  int precipChance;  // %
+  int windKph;       // km/h
+  char windDir[4];
+  int uvIndex;
+} WeatherData;
 
 typedef struct {
   char name[18];
@@ -132,14 +143,18 @@ static inline UWORD bytesForMono1bpp(UWORD w, UWORD h) {
 }
 
 // ---------- Sensor mock (replace with real sensors/APIs) ----------
-static void readAir(AirData* a) {
-  a->pm25 = 12;
-  a->pm10 = 28;
-  a->co2 = 950;
-  a->voc = 0.40f;
-  a->nox = 12;
-  a->tC = 22.4f;
-  a->rh = 46;
+static void readWeather(WeatherData* w) {
+  w->icon = WeatherIcon_Partly;
+  snprintf(w->condition, sizeof(w->condition), "Partly Cloudy");
+  w->tempNow = 19;
+  w->feelsLike = 18;
+  w->tempHigh = 22;
+  w->tempLow = 11;
+  w->humidity = 58;
+  w->precipChance = 35;
+  w->windKph = 18;
+  snprintf(w->windDir, sizeof(w->windDir), "SW");
+  w->uvIndex = 5;
 }
 
 static void readPlants(PlantItem* p, int n) {
@@ -151,35 +166,133 @@ static void readPlants(PlantItem* p, int n) {
   }
 }
 
-// ---------- AQI helpers ----------
-static int level_pm(int val) {
-  if (val <= 15) return 0;  // Good
-  if (val <= 35) return 1;  // Ok
-  return 2;                 // Bad
-}
-static int level_co2(int ppm) {
-  if (ppm < 800) return 0;
-  if (ppm < 1200) return 1;
-  return 2;
-}
-static int level_generic(float v, float good_max, float ok_max) {
-  if (v <= good_max) return 0;
-  if (v <= ok_max) return 1;
-  return 2;
-}
-static const char* lvlText(int lvl) {
-  return (lvl == 0) ? "Good" : (lvl == 1) ? "Ok"
-                                          : "Bad";
+// ---------- Weather icon helpers ----------
+static void drawSunIcon(int x, int y, int size) {
+  int cx = x + size / 2;
+  int cy = y + size / 2;
+  int r = size / 3;
+  int ray = r + size / 6;
+
+  Paint_DrawCircle(cx, cy, r, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+
+  // cardinal rays (thin rectangles)
+  Paint_DrawRectangle(cx - 1, cy - ray, cx + 1, cy - r - 2, BLACK, DOT_PIXEL_1X1,
+                      DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx - 1, cy + r + 2, cx + 1, cy + ray, BLACK, DOT_PIXEL_1X1,
+                      DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx - ray, cy - 1, cx - r - 2, cy + 1, BLACK, DOT_PIXEL_1X1,
+                      DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx + r + 2, cy - 1, cx + ray, cy + 1, BLACK, DOT_PIXEL_1X1,
+                      DRAW_FILL_FULL);
+
+  // diagonal rays (small squares)
+  int diag = (ray * 7) / 10;
+  Paint_DrawRectangle(cx - diag, cy - diag, cx - diag + 2, cy - diag + 2, BLACK,
+                      DOT_PIXEL_1X1, DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx + diag - 2, cy - diag, cx + diag, cy - diag + 2, BLACK,
+                      DOT_PIXEL_1X1, DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx - diag, cy + diag - 2, cx - diag + 2, cy + diag, BLACK,
+                      DOT_PIXEL_1X1, DRAW_FILL_FULL);
+  Paint_DrawRectangle(cx + diag - 2, cy + diag - 2, cx + diag, cy + diag, BLACK,
+                      DOT_PIXEL_1X1, DRAW_FILL_FULL);
 }
 
-// Tiny 3-segment scale like [■□□]
-static void drawScale3(int x, int y, int boxW, int boxH, int lvl) {
-  int gap = 2;
-  for (int i = 0; i < 3; i++) {
-    int bx = x + i * (boxW + gap);
-    Paint_DrawRectangle(bx, y, bx + boxW, y + boxH, BLACK, DOT_PIXEL_1X1,
-                        (i == lvl) ? DRAW_FILL_FULL : DRAW_FILL_EMPTY);
+static void drawCloudIcon(int x, int y, int size) {
+  int baseY = y + size / 2 + 6;
+  int rSmall = size / 5;
+  int rMed = rSmall + 4;
+  int rLarge = rMed + 4;
+  int left = x + 8;
+
+  Paint_DrawCircle(left, baseY, rMed, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+  Paint_DrawCircle(left + rMed + rSmall, baseY - rSmall, rLarge, BLACK,
+                   DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+  Paint_DrawCircle(left + rMed + rSmall + rLarge, baseY, rMed, BLACK,
+                   DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+  Paint_DrawRectangle(left - rSmall, baseY, left + rMed + rSmall + rLarge + rMed,
+                      baseY + rSmall, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+}
+
+static void drawWeatherConditionIcon(int x, int y, int size, WeatherIcon icon) {
+  switch (icon) {
+    case WeatherIcon_Sun:
+      drawSunIcon(x, y, size);
+      break;
+    case WeatherIcon_Partly:
+      drawSunIcon(x + size / 5, y, size * 3 / 4);
+      drawCloudIcon(x, y + size / 4, size);
+      break;
+    case WeatherIcon_Rain:
+      drawCloudIcon(x, y + size / 5, size);
+      for (int i = 0; i < 3; i++) {
+        int dropX = x + 16 + i * 12;
+        int top = y + size - 28;
+        Paint_DrawRectangle(dropX, top, dropX + 2, top + 10, BLACK,
+                            DOT_PIXEL_1X1, DRAW_FILL_FULL);
+      }
+      break;
+    case WeatherIcon_Storm:
+      drawCloudIcon(x, y + size / 5, size);
+      Paint_DrawLine(x + size / 2, y + size - 26, x + size / 2 - 10,
+                     y + size - 10, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+      Paint_DrawLine(x + size / 2 - 10, y + size - 10, x + size / 2 + 2,
+                     y + size - 10, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+      Paint_DrawLine(x + size / 2 + 2, y + size - 10, x + size / 2 - 8,
+                     y + size, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+      break;
   }
+}
+
+static void drawThermometerSymbol(int x, int y) {
+  int bulbR = 6;
+  int stemTop = y;
+  int stemBottom = y + 16;
+  int cx = x + bulbR;
+
+  Paint_DrawRectangle(cx - 2, stemTop, cx + 2, stemBottom, BLACK, DOT_PIXEL_1X1,
+                      DRAW_FILL_EMPTY);
+  Paint_DrawCircle(cx, stemBottom + bulbR, bulbR, BLACK, DOT_PIXEL_1X1,
+                   DRAW_FILL_EMPTY);
+  Paint_DrawRectangle(cx - 4, stemBottom - 4, cx + 4, stemBottom, BLACK,
+                      DOT_PIXEL_1X1, DRAW_FILL_FULL);
+}
+
+static void drawWindSymbol(int x, int y) {
+  for (int i = 0; i < 3; i++) {
+    int yLine = y + 4 + i * 6;
+    Paint_DrawLine(x, yLine, x + 16, yLine, BLACK, DOT_PIXEL_1X1,
+                   LINE_STYLE_SOLID);
+    Paint_DrawLine(x + 16, yLine, x + 20, yLine - 2, BLACK, DOT_PIXEL_1X1,
+                   LINE_STYLE_SOLID);
+  }
+}
+
+static void drawHumiditySymbol(int x, int y) {
+  int cx = x + 8;
+  Paint_DrawLine(cx, y, cx - 6, y + 10, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+  Paint_DrawLine(cx, y, cx + 6, y + 10, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+  Paint_DrawCircle(cx, y + 16, 6, BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
+}
+
+static void drawPrecipSymbol(int x, int y) {
+  int top = y + 6;
+  Paint_DrawLine(x + 2, top, x + 20, top, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+  Paint_DrawLine(x + 2, top, x + 6, top - 6, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+  Paint_DrawLine(x + 16, top - 6, x + 20, top, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+  Paint_DrawLine(x + 11, top, x + 11, top + 14, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+  Paint_DrawLine(x + 8, top + 4, x + 8, top + 10, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+  Paint_DrawLine(x + 14, top + 4, x + 14, top + 10, BLACK, DOT_PIXEL_1X1,
+                 LINE_STYLE_SOLID);
+}
+
+static void drawUvSymbol(int x, int y) {
+  drawSunIcon(x, y, 22);
+  Paint_DrawString_EN(x + 4, y + 24, (char*)"UV", &Font16, WHITE, BLACK);
 }
 
 // ---------- UI drawing ----------
@@ -202,7 +315,7 @@ static void drawStaticUI(void) {
   // Left column
   Paint_DrawRectangle(COL_L_X, COL_L_Y, COL_L_X + COL_L_W, COL_L_Y + COL_L_H,
                       BLACK, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-  drawSectionTitle(COL_L_X + 10, COL_L_Y + 4, "AIR QUALITY");
+  drawSectionTitle(COL_L_X + 10, COL_L_Y + 4, "TODAY'S WEATHER");
 
   // Right column
   Paint_DrawRectangle(COL_R_X, COL_R_Y, COL_R_X + COL_R_W, COL_R_Y + COL_R_H,
@@ -219,69 +332,55 @@ static void drawStaticUI(void) {
 }
 
 
-// Air block (partial)
-static void updateAirPart(const AirData* a) {
+// Weather block (partial)
+static void updateWeatherPart(const WeatherData* w) {
   Paint_SelectImage(FBPart);
-  Paint_NewImage(FBPart, PRT_AIR_W, PRT_AIR_H, 0, WHITE);
+  Paint_NewImage(FBPart, PRT_WTH_W, PRT_WTH_H, 0, WHITE);
   Paint_Clear(WHITE);
 
-  int y = 0;
-  int line = 28;
-  int labelX = 0;
-  int scaleX = 88;
-  int scaleW = 18, scaleH = 12;
-  int textX = scaleX + 3 * (scaleW + 2) + 10;
+  const int iconSize = 64;
+  drawWeatherConditionIcon(4, 4, iconSize, w->icon);
 
-  char buf[40];
+  char buf[64];
+  int textX = iconSize + 16;
 
-  // PM2.5
-  int lvl = level_pm(a->pm25);
-  Paint_DrawString_EN(labelX, y, (char*)"PM2.5", &Font16, WHITE, BLACK);
-  drawScale3(scaleX, y + 2, scaleW, scaleH, lvl);
-  snprintf(buf, sizeof(buf), "%-3s  %d ug/m3", lvlText(lvl), a->pm25);
-  Paint_DrawString_EN(textX, y, buf, &Font16, WHITE, BLACK);
-  y += line;
+  Paint_DrawString_EN(textX, 6, (char*)w->condition, &Font20, WHITE, BLACK);
+  snprintf(buf, sizeof(buf), "Now %d%cC", w->tempNow, 0xB0);
+  Paint_DrawString_EN(textX, 34, buf, &Font16, WHITE, BLACK);
 
-  // PM10
-  lvl = level_pm(a->pm10);
-  Paint_DrawString_EN(labelX, y, (char*)"PM10 ", &Font16, WHITE, BLACK);
-  drawScale3(scaleX, y + 2, scaleW, scaleH, lvl);
-  snprintf(buf, sizeof(buf), "%-3s  %d ug/m3", lvlText(lvl), a->pm10);
-  Paint_DrawString_EN(textX, y, buf, &Font16, WHITE, BLACK);
-  y += line;
+  snprintf(buf, sizeof(buf), "Feels like %d%cC", w->feelsLike, 0xB0);
+  Paint_DrawString_EN(textX, 52, buf, &Font16, WHITE, BLACK);
 
-  // CO2
-  lvl = level_co2(a->co2);
-  Paint_DrawString_EN(labelX, y, (char*)"CO2  ", &Font16, WHITE, BLACK);
-  drawScale3(scaleX, y + 2, scaleW, scaleH, lvl);
-  snprintf(buf, sizeof(buf), "%-3s  %d ppm", lvlText(lvl), a->co2);
-  Paint_DrawString_EN(textX, y, buf, &Font16, WHITE, BLACK);
-  y += line;
+  int rowY = 84;
+  const int rowStep = 32;
+  const int metricTextX = 48;
 
-  // VOCx
-  lvl = level_generic(a->voc, 0.3f, 0.6f);
-  Paint_DrawString_EN(labelX, y, (char*)"VOCx ", &Font16, WHITE, BLACK);
-  drawScale3(scaleX, y + 2, scaleW, scaleH, lvl);
-  snprintf(buf, sizeof(buf), "%-3s  %.2f mg/m3", lvlText(lvl), a->voc);
-  Paint_DrawString_EN(textX, y, buf, &Font16, WHITE, BLACK);
-  y += line;
+  drawThermometerSymbol(8, rowY - 18);
+  snprintf(buf, sizeof(buf), "Temperature  High %d%c / Low %d%c", w->tempHigh, 0xB0, w->tempLow, 0xB0);
+  Paint_DrawString_EN(metricTextX, rowY, buf, &Font16, WHITE, BLACK);
 
-  // NOx
-  lvl = level_generic((float)a->nox, 20.f, 40.f);
-  Paint_DrawString_EN(labelX, y, (char*)"NOx  ", &Font16, WHITE, BLACK);
-  drawScale3(scaleX, y + 2, scaleW, scaleH, lvl);
-  snprintf(buf, sizeof(buf), "%-3s  %d ppb", lvlText(lvl), a->nox);
-  Paint_DrawString_EN(textX, y, buf, &Font16, WHITE, BLACK);
-  y += (line + 6);
+  rowY += rowStep;
+  drawWindSymbol(8, rowY - 16);
+  snprintf(buf, sizeof(buf), "Wind  %d km/h %s", w->windKph, w->windDir);
+  Paint_DrawString_EN(metricTextX, rowY, buf, &Font16, WHITE, BLACK);
 
-  // Temp/Humidity
-  snprintf(buf, sizeof(buf), "Temp   %.1f C", a->tC);
-  Paint_DrawString_EN(labelX, y, buf, &Font16, WHITE, BLACK);
-  y += line;
-  snprintf(buf, sizeof(buf), "Hum    %d %%", a->rh);
-  Paint_DrawString_EN(labelX, y, buf, &Font16, WHITE, BLACK);
+  rowY += rowStep;
+  drawHumiditySymbol(8, rowY - 18);
+  snprintf(buf, sizeof(buf), "Humidity  %d%%", w->humidity);
+  Paint_DrawString_EN(metricTextX, rowY, buf, &Font16, WHITE, BLACK);
 
-  EPD_7IN5_V2_Display_Part(FBPart, PRT_AIR_X, PRT_AIR_Y, PRT_AIR_X + PRT_AIR_W, PRT_AIR_Y + PRT_AIR_H);
+  rowY += rowStep;
+  drawPrecipSymbol(6, rowY - 18);
+  snprintf(buf, sizeof(buf), "Precipitation  %d%% chance", w->precipChance);
+  Paint_DrawString_EN(metricTextX, rowY, buf, &Font16, WHITE, BLACK);
+
+  rowY += rowStep;
+  drawUvSymbol(4, rowY - 24);
+  snprintf(buf, sizeof(buf), "UV Index  %d", w->uvIndex);
+  Paint_DrawString_EN(metricTextX, rowY, buf, &Font16, WHITE, BLACK);
+
+  EPD_7IN5_V2_Display_Part(FBPart, PRT_WTH_X, PRT_WTH_Y, PRT_WTH_X + PRT_WTH_W,
+                           PRT_WTH_Y + PRT_WTH_H);
 }
 
 // Calendar (partial) — fed by ICalendarProvider
@@ -398,12 +497,12 @@ void setup() {
 
   // === Allocate partial framebuffer: pick the LARGEST partial region ===
   const UWORD partSizeClk = bytesForMono1bpp(PRT_CLK_W, PRT_CLK_H);  // 260 x ~28
-  const UWORD partSizeAir = bytesForMono1bpp(PRT_AIR_W, PRT_AIR_H);  // 348 x 224
+  const UWORD partSizeWeather = bytesForMono1bpp(PRT_WTH_W, PRT_WTH_H);  // 348 x 224
   const UWORD partSizeCal = bytesForMono1bpp(PRT_CAL_W, PRT_CAL_H);  // 400 x 224
   const UWORD partSizePlt = bytesForMono1bpp(PRT_PLT_W, PRT_PLT_H);  // 772 x 114
 
   UWORD partSize = partSizeClk;
-  if (partSizeAir > partSize) partSize = partSizeAir;
+  if (partSizeWeather > partSize) partSize = partSizeWeather;
   if (partSizeCal > partSize) partSize = partSizeCal;  // <-- largest for current layout
   if (partSizePlt > partSize) partSize = partSizePlt;
 
@@ -440,9 +539,9 @@ void setup() {
   gCal->begin();
 
   // Initial dynamic fills (clock already drew once)
-  AirData a;
-  readAir(&a);
-  updateAirPart(&a);
+  WeatherData weather;
+  readWeather(&weather);
+  updateWeatherPart(&weather);
 
   CalItem cal[6];
   int ncal = 0;
@@ -475,9 +574,9 @@ void loop() {
   // SENSORS: every 10s (partial)
   if (++sensorTick >= 10) {
     sensorTick = 0;
-    AirData a;
-    readAir(&a);
-    updateAirPart(&a);
+    WeatherData weather;
+    readWeather(&weather);
+    updateWeatherPart(&weather);
 
     PlantItem plants[5];
     readPlants(plants, 5);
@@ -503,9 +602,9 @@ void loop() {
     EPD_7IN5_V2_Init_Part();
     // Repaint dynamic sections
     if (clk) clk->begin();  // ensure clock region is clean after full refresh
-    AirData a;
-    readAir(&a);
-    updateAirPart(&a);
+    WeatherData weather;
+    readWeather(&weather);
+    updateWeatherPart(&weather);
     if (gCal) {
       CalItem cal[6];
       int ncal = gCal->readToday(cal, 6);
