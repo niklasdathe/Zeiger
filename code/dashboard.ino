@@ -87,7 +87,7 @@ static const char* CAL_URL = SECRET_CAL_URL;
 #define PRT_CLK_X (W - 270)
 #define PRT_CLK_Y (HDR_Y + 6)
 #define PRT_CLK_W 260
-#define PRT_CLK_H (HDR_H - 12)
+#define PRT_CLK_H (HDR_H - 6)
 
 #define PRT_AIR_X (COL_L_X + 6)
 #define PRT_AIR_Y (COL_L_Y + 26)
@@ -366,9 +366,8 @@ void setup() {
       WiFi.status(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
   // TZ + NTP (Europe/Berlin)
-  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
-  tzset();
-  configTime(0, 0, "pool.ntp.org", "time.cloudflare.com");
+  static const char* TZ_EU_BERLIN = "CET-1CEST,M3.5.0,M10.5.0/3";
+  configTzTime(TZ_EU_BERLIN, "pool.ntp.org", "time.cloudflare.com");
 
   // Robust time readiness loop
   time_t now = 0;
@@ -397,7 +396,7 @@ void setup() {
   }
 
   // === Allocate partial framebuffer: pick the LARGEST partial region ===
-  const UWORD partSizeClk = bytesForMono1bpp(PRT_CLK_W, PRT_CLK_H);  // 260 x ~28
+  const UWORD partSizeClk = bytesForMono1bpp(PRT_CLK_W, PRT_CLK_H);  // 260 x 40
   const UWORD partSizeAir = bytesForMono1bpp(PRT_AIR_W, PRT_AIR_H);  // 348 x 224
   const UWORD partSizeCal = bytesForMono1bpp(PRT_CAL_W, PRT_CAL_H);  // 400 x 224
   const UWORD partSizePlt = bytesForMono1bpp(PRT_PLT_W, PRT_PLT_H);  // 772 x 114

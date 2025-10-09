@@ -50,14 +50,16 @@ private:
     Paint_NewImage(_scratchForPartial(), _w, _h, 0, WHITE);
     Paint_Clear(WHITE);
 
-    // Two lines: date (Font16), time (Font20), with monospace time
-    // date baseline y=2, time baseline y≈24 (tuned for your PRT_CLK_H)
-    Paint_DrawString_EN(4, 2, dateStr, &Font16, WHITE, BLACK);
+    // Two lines: date (Font16), time (Font20), with monospace time. Position the lines
+    // dynamically so they stay within the widget's height even if fonts change slightly.
+    const int dateY = 0;
+    const int timeY = dateY + Font16.Height + 2;  // small gap between date and time
+    Paint_DrawString_EN(4, dateY, dateStr, &Font16, WHITE, BLACK);
 
     // Use monospace draw to avoid glyph overlap issues in some font packs
     // Choose a conservative cell width for Font20; tune if you want tighter spacing
     const int cellW = 14;  // ~Font20 width per char on Waveshare packs; adjust if needed
-    drawMonospaceString(4, 22, timeStr, &Font20, cellW);
+    drawMonospaceString(4, timeY, timeStr, &Font20, cellW);
 
     // Push partial
     EPD_7IN5_V2_Display_Part(_scratchForPartial(), _x, _y, _x+_w, _y+_h);
